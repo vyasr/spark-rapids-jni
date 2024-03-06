@@ -803,12 +803,7 @@ TEST_F(JsonParserTests, GetNumberText)
   parser.reset();
 
   assert(json_token::INIT == parser.get_current_token());
-  auto [ptr1, len1] = parser.get_current_number_text();
-  assert_ptr_len(ptr1, len1, nullptr, -1);
-
   assert(json_token::START_ARRAY == parser.next_token());
-  auto [ptr2, len2] = parser.get_current_number_text();
-  assert_ptr_len(ptr2, len2, nullptr, -1);
 
   assert(json_token::VALUE_NUMBER_FLOAT == parser.next_token());
   auto [ptr3, len3] = parser.get_current_number_text();
@@ -817,12 +812,56 @@ TEST_F(JsonParserTests, GetNumberText)
   assert(json_token::VALUE_NUMBER_INT == parser.next_token());
   auto [ptr4, len4] = parser.get_current_number_text();
   assert_ptr_len(ptr4, len4, json.data() + 21, 9);
+}
 
-  assert(json_token::END_ARRAY == parser.next_token());
-  auto [ptr5, len5] = parser.get_current_number_text();
-  assert_ptr_len(ptr5, len5, nullptr, -1);
+void assert_float_parts(bool float_sign,
+                        char const* float_integer_pos,
+                        int float_integer_len,
+                        char const* float_fraction_pos,
+                        int float_fraction_len,
+                        char const* float_exp_pos,
+                        int float_exp_len,
+                        bool actual_float_sign,
+                        char const* actual_float_integer_pos,
+                        int actual_float_integer_len,
+                        char const* actual_float_fraction_pos,
+                        int actual_float_fraction_len,
+                        char const* actual_float_exp_pos,
+                        int actual_float_exp_len)
+{
+  assert(float_sign == actual_float_sign);
+  assert(float_integer_pos == actual_float_integer_pos);
+  assert(float_integer_len == actual_float_integer_len);
+  assert(float_fraction_pos == actual_float_fraction_pos);
+  assert(float_fraction_len == actual_float_fraction_len);
+  assert(float_exp_pos == actual_float_exp_pos);
+  assert(float_exp_len == actual_float_exp_len);
+}
 
-  assert(json_token::SUCCESS == parser.next_token());
-  auto [ptr6, len6] = parser.get_current_number_text();
-  assert_ptr_len(ptr6, len6, nullptr, -1);
+TEST_F(JsonParserTests, GetFloatParts)
+{
+  std::string json = "[-123.0345e-05678]  ";
+  auto parser      = *get_parser(json, /*single_quote*/ true, /*control_char*/ true);
+  // avoid unused-but-set-variable compile warnning
+  parser.reset();
+
+  assert(json_token::INIT == parser.get_current_token());
+  assert(json_token::START_ARRAY == parser.next_token());
+
+  assert(json_token::VALUE_NUMBER_FLOAT == parser.next_token());
+  auto parts = parser.get_current_float_parts();
+  assert_float_parts(false,
+                     json.data() + 2,
+                     3,
+                     json.data() + 6,
+                     4,
+                     json.data() + 11,
+                     5,
+                     thrust::get<0>(parts),
+                     thrust::get<1>(parts),
+                     thrust::get<2>(parts),
+                     thrust::get<3>(parts),
+                     thrust::get<4>(parts),
+                     thrust::get<5>(parts),
+                     thrust::get<6>(parts));
 }

@@ -23,13 +23,15 @@
 
 namespace spark_rapids_jni {
 
-namespace detail {
-
-}  // namespace detail
-
+/**
+ * Extracts json object from a json string based on json path specified, and returns json string
+ * of the extracted json object. It will return null if the input json string is invalid.
+ */
 std::unique_ptr<cudf::column> get_json_object(
   cudf::strings_column_view const& col,
   cudf::string_scalar const& json_path,
+  spark_rapids_jni::json_parser_options options,
   rmm::cuda_stream_view stream        = cudf::get_default_stream(),
   rmm::mr::device_memory_resource* mr = rmm::mr::get_current_device_resource());
+
 }  // namespace spark_rapids_jni

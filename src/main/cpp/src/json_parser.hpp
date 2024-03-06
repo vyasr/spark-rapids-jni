@@ -22,6 +22,10 @@
 
 namespace spark_rapids_jni {
 
+// deep depth will consume more memory, we can tuning this in future.
+// we ever run into a limit of 254, here use a little value 200.
+constexpr int curr_max_json_nesting_depth = 200;
+
 /**
  * @brief Settings for `json_parser_options()`.
  */
@@ -246,7 +250,7 @@ enum class json_token {
  *      here `asscii_control_chars` represents control chars which in Ascii code range: [0, 32)
  *
  */
-template <int max_json_nesting_depth>
+template <int max_json_nesting_depth = curr_max_json_nesting_depth>
 class json_parser {
  public:
   CUDF_HOST_DEVICE inline json_parser(json_parser_options const& _options,
@@ -715,7 +719,12 @@ class json_parser {
     token_start_pos = curr_pos;
 
     // parse sign
-    try_skip('-');
+    if (try_skip('-')) {
+      float_sign = false;
+    } else {
+      float_sign = true;
+    }
+    float_integer_pos = curr_pos;
 
     // parse unsigned number
     bool is_float = false;
@@ -761,27 +770,28 @@ class json_parser {
    */
   CUDF_HOST_DEVICE inline bool try_unsigned_number(bool& is_float)
   {
-    int int_len      = 0;
-    int fraction_len = 0;
-    int exp_len      = 0;
+    // reset the float parts
+    float_integer_len  = 0;
+    float_fraction_len = 0;
+    float_exp_len      = 0;
 
     if (!eof()) {
       char c = *curr_pos;
       if (c >= '1' && c <= '9') {
         curr_pos++;
-        int_len++;
+        float_integer_len++;
         // first digit is [1-9]
         // path: INT = [1-9] [0-9]*
-        int_len += skip_zero_or_more_digits();
-        return parse_number_from_fraction(is_float, fraction_len, exp_len) &&
-               verify_max_num_len(int_len, fraction_len, exp_len);
+        float_integer_len += skip_zero_or_more_digits();
+        return parse_number_from_fraction(is_float) &&
+               verify_max_num_len(float_integer_len, float_fraction_len, float_exp_len);
       } else if (c == '0') {
         curr_pos++;
-        int_len++;
+        float_integer_len++;
         // first digit is [0]
         // path: INT = '0'
-        return parse_number_from_fraction(is_float, fraction_len, exp_len) &&
-               verify_max_num_len(int_len, fraction_len, exp_len);
+        return parse_number_from_fraction(is_float) &&
+               verify_max_num_len(float_integer_len, float_fraction_len, float_exp_len);
       } else {
         // first digit is non [0-9]
         return false;
@@ -795,26 +805,23 @@ class json_parser {
   /**
    * parse: ('.' [0-9]+)? EXP?
    * @param[is_float] is float
-   * @param[fraction_len] fraction len in number, e.g.: 1.23 23 is fraction part
-   * @param[exp_len] exp len in number, e.g.: 1e234 234 is exp part
    */
-  CUDF_HOST_DEVICE inline bool parse_number_from_fraction(bool& is_float,
-                                                          int& fraction_len,
-                                                          int& exp_len)
+  CUDF_HOST_DEVICE inline bool parse_number_from_fraction(bool& is_float)
   {
     // parse fraction
     if (try_skip('.')) {
       // has fraction
-      is_float = true;
+      float_fraction_pos = curr_pos;
+      is_float           = true;
       // try pattern: [0-9]+
-      if (!try_skip_one_or_more_digits(fraction_len)) { return false; }
+      if (!try_skip_one_or_more_digits(float_fraction_len)) { return false; }
     }
 
     // parse exp
     if (!eof() && (*curr_pos == 'e' || *curr_pos == 'E')) {
       curr_pos++;
       is_float = true;
-      return try_parse_exp(exp_len);
+      return try_parse_exp();
     }
 
     return true;
@@ -860,15 +867,20 @@ class json_parser {
    * parse [eE][+-]?[0-9]+
    * @param[out] exp_len exp len
    */
-  CUDF_HOST_DEVICE inline bool try_parse_exp(int& exp_len)
+  CUDF_HOST_DEVICE inline bool try_parse_exp()
   {
     // already parsed [eE]
 
+    float_exp_pos = curr_pos;
+
     // parse [+-]?
-    if (!eof() && (*curr_pos == '+' || *curr_pos == '-')) { curr_pos++; }
+    if (!eof() && (*curr_pos == '+' || *curr_pos == '-')) {
+      float_exp_len++;
+      curr_pos++;
+    }
 
     // parse [0-9]+
-    return try_skip_one_or_more_digits(exp_len);
+    return try_skip_one_or_more_digits(float_exp_len);
   }
 
   // =========== Parse number end ===========
@@ -1165,25 +1177,36 @@ class json_parser {
   }
 
   /**
-   * get current number text.
-   * if current token is not number, return pair(nullptr, -1)
+   * get current text for VALUE_NUMBER_INT token or VALUE_NUMBER_FLOAT token
    */
   CUDF_HOST_DEVICE thrust::pair<char const*, cudf::size_type> get_current_number_text()
   {
-    if (curr_token != json_token::VALUE_NUMBER_FLOAT &&
-        curr_token != json_token::VALUE_NUMBER_INT) {
-      return thrust::make_pair(nullptr, -1);
-    }
-
+    assert(json_token::VALUE_NUMBER_FLOAT == curr_token ||
+           json_token::VALUE_NUMBER_INT == curr_token);
     return thrust::make_pair(token_start_pos, token_str_len);
+  }
+
+  /**
+   * get float parts
+   */
+  CUDF_HOST_DEVICE thrust::tuple<bool, char const*, int, char const*, int, char const*, int>
+  get_current_float_parts()
+  {
+    assert(json_token::VALUE_NUMBER_FLOAT == curr_token);
+    return thrust::make_tuple(float_sign,
+                              float_integer_pos,
+                              float_integer_len,
+                              float_fraction_pos,
+                              float_fraction_len,
+                              float_exp_pos,
+                              float_exp_len);
   }
 
  private:
   json_parser_options const& options;
-  char const* const json_start_pos{nullptr};
-  char const* const json_end_pos{nullptr};
-
-  char const* curr_pos{nullptr};
+  char const* const json_start_pos;
+  char const* const json_end_pos;
+  char const* curr_pos;
   json_token curr_token{json_token::INIT};
 
   // saves the nested contexts: JSON object context or JSON array context
@@ -1196,6 +1219,17 @@ class json_parser {
   // used by copy text
   char const* token_start_pos;
   cudf::size_type token_str_len;
+
+  // if current token is VALUE_NUMBER_FLOAT, use the following variables to save float parts
+  // e.g.: -123.000456E-000789, sign is false; integer part is 123; fraction part is 000456; exp
+  // part is -000789 The following parts is used by normalization, e.g.: 0.001 => 1E-2
+  bool float_sign;
+  char const* float_integer_pos;
+  int float_integer_len;
+  char const* float_fraction_pos;
+  int float_fraction_len;
+  char const* float_exp_pos;
+  int float_exp_len;
 };
 
 }  // namespace spark_rapids_jni
