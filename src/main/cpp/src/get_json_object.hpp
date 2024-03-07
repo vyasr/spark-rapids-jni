@@ -24,8 +24,9 @@
 namespace spark_rapids_jni {
 
 /**
- * Extracts json object from a json string based on json path specified, and returns json string
- * of the extracted json object. It will return null if the input json string is invalid.
+ * Extracts json object from a json string based on json path specified, and
+ * returns json string of the extracted json object. It will return null if the
+ * input json string is invalid.
  */
 std::unique_ptr<cudf::column> get_json_object(
   cudf::strings_column_view const& col,

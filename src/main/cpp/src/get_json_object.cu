@@ -153,8 +153,8 @@ class json_generator {
  * The primary use of this is to distinguish between "success" and
  * "success but no data" return cases.  For example, if you are reading the
  * values of an array you might call a parse function in a while loop. You
- * would want to continue doing this until you either encounter an error (parse_result::ERROR)
- * or you get nothing back (parse_result::EMPTY)
+ * would want to continue doing this until you either encounter an error
+ * (parse_result::ERROR) or you get nothing back (parse_result::EMPTY)
  */
 enum class parse_result {
   ERROR,          // failure
@@ -167,8 +167,8 @@ enum class parse_result {
  * @brief Parse a single json string using the provided command buffer
  *
  * @param j_state The incoming json string and associated parser
- * @param commands The command buffer to be applied to the string. Always ends with a
- * path_operator_type::END
+ * @param commands The command buffer to be applied to the string. Always ends
+ * with a path_operator_type::END
  * @param output Buffer user to store the results of the query
  * @returns A result code indicating success/fail/empty.
  */
@@ -188,10 +188,10 @@ __device__ parse_result parse_json_path(json_parser<max_json_nesting_depth>& j_p
  *
  * @param input The incoming json string
  * @param input_len Size of the incoming json string
- * @param commands The command buffer to be applied to the string. Always ends with a
- * path_operator_type::END
- * @param out_buf Buffer user to store the results of the query (nullptr in the size computation
- * step)
+ * @param commands The command buffer to be applied to the string. Always ends
+ * with a path_operator_type::END
+ * @param out_buf Buffer user to store the results of the query (nullptr in the
+ * size computation step)
  * @param out_buf_size Size of the output buffer
  * @param options Options controlling behavior
  * @returns A pair containing the result code the output buffer.
@@ -221,7 +221,8 @@ get_json_object_single(char const* input,
  *
  * @param col Device view of the incoming string
  * @param commands JSONPath command buffer
- * @param output_offsets Buffer used to store the string offsets for the results of the query
+ * @param output_offsets Buffer used to store the string offsets for the results
+ * of the query
  * @param out_buf Buffer used to store the results of the query
  * @param out_validity Output validity buffer
  * @param out_valid_count Output count of # of valid bits
@@ -266,8 +267,8 @@ __launch_bounds__(block_size) CUDF_KERNEL
       if (result == parse_result::SUCCESS) { is_valid = true; }
     }
 
-    // filled in only during the precompute step. during the compute step, the offsets
-    // are fed back in so we do -not- want to write them out
+    // filled in only during the precompute step. during the compute step, the
+    // offsets are fed back in so we do -not- want to write them out
     if (!out_buf.has_value()) { d_sizes[tid] = output_size; }
 
     // validity filled in only during the output step
@@ -342,8 +343,8 @@ std::unique_ptr<cudf::column> get_json_object(cudf::strings_column_view const& c
   // allocate output string column
   rmm::device_uvector<char> chars(output_size, stream, mr);
 
-  // potential optimization : if we know that all outputs are valid, we could skip creating
-  // the validity mask altogether
+  // potential optimization : if we know that all outputs are valid, we could
+  // skip creating the validity mask altogether
   rmm::device_buffer validity =
     cudf::detail::create_null_mask(col.size(), cudf::mask_state::UNINITIALIZED, stream, mr);
 
