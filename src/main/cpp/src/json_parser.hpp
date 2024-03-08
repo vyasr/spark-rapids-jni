@@ -36,8 +36,8 @@ class json_parser_options {
   // Whether allow unescaped control characters in JSON Strings.
   bool allow_unescaped_control_chars = false;
 
-  // Define the maximum JSON String length.
-  int max_string_len = -1;
+  // Define the maximum JSON String length, counts utf8 bytes.
+  int max_string_utf8_bytes = -1;
 
   // Define the maximum JSON number length.
   int max_num_len = -1;
@@ -89,9 +89,10 @@ class json_parser_options {
    * limitation. e.g.: The length of String "\\n" is 1, JSON parser does not
    * count escape characters.
    *
-   * @return integer value of allowed maximum JSON String length
+   * @return integer value of allowed maximum JSON String length, counts utf8
+   * bytes
    */
-  [[nodiscard]] CUDF_HOST_DEVICE int get_max_string_len() const { return max_string_len; }
+  [[nodiscard]] CUDF_HOST_DEVICE int get_max_string_len() const { return max_string_utf8_bytes; }
 
   /**
    * @brief Returns maximum JSON number length, negative or zero means no
@@ -142,11 +143,11 @@ class json_parser_options {
   }
 
   /**
-   * @brief Set maximum JSON String length.
+   * @brief Set maximum JSON String length, counts utf8 bytes.
    *
    * @param _max_string_len integer indicating desired behavior.
    */
-  void set_max_string_len(int _max_string_len) { max_string_len = _max_string_len; }
+  void set_max_string_len(int _max_string_len) { max_string_utf8_bytes = _max_string_len; }
 
   /**
    * @brief Set maximum JSON number length.
@@ -521,7 +522,6 @@ class json_parser {
     token_start_pos = curr_pos;
     if (!try_skip(quote_char)) { return false; }
 
-    string_token_char_num   = 0;
     string_token_utf8_bytes = 0;
 
     // scan string content
@@ -531,29 +531,23 @@ class json_parser {
       if (c == quote_char) {
         // path 1: close string
         curr_pos++;
-        return verify_max_string_len(string_token_char_num);
+        return check_string_max_utf8_bytes();
       } else if (v >= 0 && v < 32 && options.get_allow_unescaped_control_chars()) {
         // path 2: unescaped control char
         if (copy) { *copy_dest++ = *curr_pos; }
         curr_pos++;
-        string_token_char_num++;
         string_token_utf8_bytes++;
         continue;
       } else if ('\\' == c) {
         // path 3: escape path
         curr_pos++;
-        if (try_skip_escape_part(copy, copy_dest)) {
-          string_token_char_num++;
-        } else {
-          return false;
-        }
+        if (!try_skip_escape_part(copy, copy_dest)) { return false; }
       } else {
         // path 4: safe code point
         if (!try_skip_safe_code_point(c)) {
           return false;
         } else {
           if (copy) { *copy_dest++ = c; }
-          string_token_char_num++;
           string_token_utf8_bytes++;
         }
       }
@@ -810,13 +804,13 @@ class json_parser {
   /**
    * verify max string length if enabled
    */
-  CUDF_HOST_DEVICE inline bool verify_max_string_len(int str_len)
+  CUDF_HOST_DEVICE inline bool check_string_max_utf8_bytes()
   {
     return
       // disabled str len check
       options.get_max_string_len() <= 0 ||
       // enabled str len check
-      (options.get_max_string_len() > 0 && str_len <= options.get_max_string_len());
+      (options.get_max_string_len() > 0 && string_token_utf8_bytes <= options.get_max_string_len());
   }
 
   /**
@@ -1292,7 +1286,6 @@ class json_parser {
   bool float_exp_has_sign;
 
   // The following variables record string/field name token informations
-  int string_token_char_num;
   int string_token_utf8_bytes;
 };
 
