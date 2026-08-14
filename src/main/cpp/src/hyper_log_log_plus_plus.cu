@@ -29,6 +29,7 @@
 #include <cudf/structs/structs_column_view.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
+#include <cudf/utilities/memory_resource.hpp>
 #include <cudf/utilities/span.hpp>
 
 #include <rmm/device_uvector.hpp>
@@ -420,7 +421,7 @@ std::unique_ptr<cudf::column> group_hllpp(cudf::column_view const& input,
       auto input_table_view = cudf::table_view{{input}};
       auto hash_col         = xxhash64(input_table_view, SEED, stream, default_mr);
       hash_col->set_null_mask(cudf::copy_bitmask(input, stream, default_mr), input.null_count());
-      auto d_hashs = cudf::column_device_view::create(hash_col->view(), stream);
+      auto d_hashs = cudf::column_device_view::create(hash_col->view(), stream, default_mr);
 
       // 2. execute partial group by
       int64_t num_blocks_p1 =
@@ -738,7 +739,7 @@ std::unique_ptr<cudf::scalar> reduce_hllpp(cudf::column_view const& input,
   auto const default_mr = cudf::get_current_device_resource_ref();
   auto hash_col         = xxhash64(input_table_view, SEED, stream, default_mr);
   hash_col->set_null_mask(cudf::copy_bitmask(input, stream, default_mr), input.null_count());
-  auto d_hashs = cudf::column_device_view::create(hash_col->view(), stream);
+  auto d_hashs = cudf::column_device_view::create(hash_col->view(), stream, default_mr);
 
   // 2. generate long columns, the size of each long column is 1
   auto num_long_cols      = num_registers_per_sketch / REGISTERS_PER_LONG + 1;
@@ -962,7 +963,7 @@ std::unique_ptr<cudf::column> estimate_from_hll_sketches(cudf::column_view const
   auto result           = cudf::make_numeric_column(
     cudf::data_type{cudf::type_id::INT64}, input.size(), cudf::mask_state::UNALLOCATED, stream, mr);
   // evaluate from struct<long, ..., long>
-  thrust::for_each_n(rmm::exec_policy_nosync(stream),
+  thrust::for_each_n(rmm::exec_policy_nosync(stream, cudf::get_current_device_resource_ref()),
                      thrust::make_counting_iterator(0),
                      input.size(),
                      estimate_fn{d_inputs, result->mutable_view().data<int64_t>(), precision});
